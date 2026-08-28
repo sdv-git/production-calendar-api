@@ -1,0 +1,239 @@
+openapi: 3.0.3
+info:
+  title: Production Calendar API
+  description: >
+    Производственный календарь Российской Федерации.
+    В базе хранятся только особые дни (праздники, сокращённые, переносы).
+    Остальные дни вычисляются по обычному календарю.
+  version: 1.0.0
+servers:
+  - url: http://127.0.0.1:8472
+    description: Docker Compose (порт 8472)
+paths:
+  /health:
+    get:
+      summary: Проверка живости и соединения с MySQL
+      responses:
+        "200":
+          description: Сервис доступен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /api/v1/calendar/{year}:
+    get:
+      summary: Производственный календарь за год
+      parameters:
+        - $ref: "#/components/parameters/Year"
+      responses:
+        "200":
+          description: Все дни года
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/YearCalendar"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/calendar/{year}/{date}:
+    get:
+      summary: Один день производственного календаря
+      parameters:
+        - $ref: "#/components/parameters/Year"
+        - $ref: "#/components/parameters/Date"
+      responses:
+        "200":
+          description: Описание дня
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarDay"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/v1/special-days:
+    get:
+      summary: Список особых дней
+      parameters:
+        - in: query
+          name: year
+          schema:
+            type: integer
+          description: Если не указан, возвращаются все особые дни
+      responses:
+        "200":
+          description: Особые дни
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpecialDayList"
+        "400":
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Добавить особый день
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpecialDayWrite"
+            example:
+              date: "2025-01-01"
+              day: 9
+              comment: "Новый год"
+      responses:
+        "201":
+          description: Создано
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarDay"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/v1/special-days/{date}:
+    put:
+      summary: Изменить особый день
+      parameters:
+        - $ref: "#/components/parameters/Date"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpecialDayUpdate"
+      responses:
+        "200":
+          description: Обновлено
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarDay"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      summary: Удалить особый день
+      parameters:
+        - $ref: "#/components/parameters/Date"
+      responses:
+        "204":
+          description: Удалено
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+components:
+  parameters:
+    Year:
+      in: path
+      name: year
+      required: true
+      schema:
+        type: integer
+        minimum: 1970
+        maximum: 2100
+      example: 2024
+    Date:
+      in: path
+      name: date
+      required: true
+      schema:
+        type: string
+        format: date
+      example: "2024-12-28"
+  schemas:
+    DayCode:
+      type: integer
+      minimum: 1
+      maximum: 9
+      description: >
+        1 вс, 2 пн, 3 вт, 4 ср, 5 чт, 6 пт, 7 сб,
+        8 сокращённый рабочий день, 9 праздничный день.
+        Для переносов указывается эффективный день недели.
+    CalendarDay:
+      type: object
+      required: [date, day, actual_day, type, is_working]
+      properties:
+        id:
+          type: integer
+          description: Есть только у особых дней из таблицы calendar
+        date:
+          type: string
+          format: date
+        day:
+          $ref: "#/components/schemas/DayCode"
+        actual_day:
+          type: integer
+          minimum: 1
+          maximum: 7
+          description: Фактический день недели без учёта производственного календаря
+        type:
+          type: string
+          enum: [holiday, shortened, transfer, regular]
+        is_working:
+          type: boolean
+        comment:
+          type: string
+          nullable: true
+    YearCalendar:
+      type: object
+      properties:
+        year:
+          type: integer
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/CalendarDay"
+    SpecialDayList:
+      type: object
+      properties:
+        days:
+          type: array
+          items:
+            $ref: "#/components/schemas/CalendarDay"
+    SpecialDayWrite:
+      type: object
+      required: [date, day]
+      properties:
+        date:
+          type: string
+          format: date
+        day:
+          $ref: "#/components/schemas/DayCode"
+        comment:
+          type: string
+          nullable: true
+          maxLength: 255
+    SpecialDayUpdate:
+      type: object
+      required: [day]
+      properties:
+        day:
+          $ref: "#/components/schemas/DayCode"
+        comment:
+          type: string
+          nullable: true
+          maxLength: 255
+    ErrorBody:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: integer
+  responses:
+    Error:
+      description: Ошибка запроса
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"

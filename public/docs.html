@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Производственный календарь</title>
+  <style>
+    :root {
+      --bg: #10141c;
+      --panel: #181e29;
+      --text: #e8edf7;
+      --muted: #8b97ad;
+      --line: #2a3344;
+      --holiday: #8b2e3b;
+      --shortened: #8a5a12;
+      --transfer: #1f4e79;
+      --weekend: #2c3340;
+      --work: #1b2430;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header, main { max-width: 1120px; margin: 0 auto; padding: 24px 16px; }
+    h1 { font-size: 1.6rem; margin: 0 0 8px; }
+    p { color: var(--muted); line-height: 1.5; }
+    a { color: #8bb4ff; }
+    .legend, .months, .form, .endpoints { display: grid; gap: 12px; }
+    .legend { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin: 16px 0 24px; }
+    .legend span, .day {
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 8px; min-height: 32px; font-size: 13px;
+    }
+    .holiday { background: var(--holiday); }
+    .shortened { background: var(--shortened); }
+    .transfer { background: var(--transfer); }
+    .weekend { background: var(--weekend); }
+    .work { background: var(--work); }
+    .months { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .month {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .month h2 { font-size: 1rem; margin: 0 0 8px; }
+    .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    .dow { color: var(--muted); font-size: 11px; text-align: center; }
+    .day {
+      cursor: pointer; border: 0; color: var(--text);
+      min-height: 34px;
+    }
+    .day.empty { background: transparent; cursor: default; }
+    .form, .endpoints, .detail {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 20px;
+    }
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+    input, select, button, textarea {
+      width: 100%;
+      margin-top: 4px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #121826;
+      color: var(--text);
+    }
+    button { cursor: pointer; background: #2d6cdf; border: 0; font-weight: 600; }
+    .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+    pre {
+      overflow: auto;
+      background: #0c1018;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 12px;
+    }
+    .status { min-height: 1.4em; font-size: 13px; color: #9ad29a; }
+    .status.error { color: #f0a3a3; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    td, th { text-align: left; padding: 8px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    code { background: #121826; padding: 2px 6px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Производственный календарь</h1>
+    <p>
+      REST API особых дней: праздники, сокращённые рабочие дни и переносы.
+      Официальная основа — календарь 2024 года.
+      Документация OpenAPI: <a href="/openapi.yaml">/openapi.yaml</a>
+    </p>
+    <div class="legend">
+      <span class="holiday">Праздник</span>
+      <span class="shortened">Сокращённый</span>
+      <span class="transfer">Перенос</span>
+      <span class="weekend">Выходной</span>
+      <span class="work">Рабочий</span>
+    </div>
+  </header>
+  <main>
+    <label>Год
+      <input id="year" type="number" value="2024" min="1970" max="2100">
+    </label>
+    <div id="calendar" class="months"></div>
+    <section class="detail">
+      <h2>День</h2>
+      <pre id="day-json">Нажмите на дату в сетке</pre>
+    </section>
+    <section class="form">
+      <h2>Особый день</h2>
+      <div class="row">
+        <label>Дата <input id="form-date" type="date" value="2025-01-01"></label>
+        <label>Код day
+          <select id="form-day">
+            <option value="1">1 — вс</option>
+            <option value="2">2 — пн</option>
+            <option value="3">3 — вт</option>
+            <option value="4">4 — ср</option>
+            <option value="5">5 — чт</option>
+            <option value="6">6 — пт</option>
+            <option value="7">7 — сб</option>
+            <option value="8">8 — сокращённый</option>
+            <option value="9" selected>9 — праздник</option>
+          </select>
+        </label>
+        <label>Комментарий <input id="form-comment" maxlength="255" placeholder="Новый год"></label>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button id="create" type="button">Добавить</button>
+        <button id="update" type="button">Изменить</button>
+        <button id="remove" type="button">Удалить</button>
+      </div>
+      <p class="status" id="form-status"></p>
+    </section>
+    <section class="endpoints">
+      <h2>Эндпоинты</h2>
+      <table>
+        <tr><th>Метод</th><th>Путь</th><th>Назначение</th></tr>
+        <tr><td>GET</td><td><code>/api/v1/calendar/{year}</code></td><td>Календарь за год</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/calendar/{year}/{date}</code></td><td>Один день</td></tr>
+        <tr><td>GET</td><td><code>/api/v1/special-days?year=2024</code></td><td>Особые дни</td></tr>
+        <tr><td>POST</td><td><code>/api/v1/special-days</code></td><td>Добавить</td></tr>
+        <tr><td>PUT</td><td><code>/api/v1/special-days/{date}</code></td><td>Изменить</td></tr>
+        <tr><td>DELETE</td><td><code>/api/v1/special-days/{date}</code></td><td>Удалить</td></tr>
+      </table>
+    </section>
+  </main>
+  <script>
+    const months = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+    const calendarEl = document.getElementById("calendar");
+    const yearEl = document.getElementById("year");
+    const dayJson = document.getElementById("day-json");
+    const statusEl = document.getElementById("form-status");
+
+    function cssClass(day) {
+      if (day.type === "holiday") return "holiday";
+      if (day.type === "shortened") return "shortened";
+      if (day.type === "transfer") return "transfer";
+      if (!day.is_working) return "weekend";
+      return "work";
+    }
+
+    async function loadYear() {
+      const year = Number(yearEl.value);
+      const response = await fetch("/api/v1/calendar/" + year);
+      const payload = await response.json();
+      if (!response.ok) {
+        calendarEl.innerHTML = "<p>" + (payload.error || "Ошибка загрузки") + "</p>";
+        return;
+      }
+      render(year, payload.days);
+    }
+
+    function render(year, days) {
+      const byDate = Object.fromEntries(days.map((day) => [day.date, day]));
+      calendarEl.innerHTML = "";
+      for (let month = 1; month <= 12; month++) {
+        const section = document.createElement("section");
+        section.className = "month";
+        section.innerHTML = "<h2>" + months[month - 1] + "</h2>";
+        const grid = document.createElement("div");
+        grid.className = "grid";
+        ["Пн","Вт","Ср","Чт","Пт","Сб","Вс"].forEach((label) => {
+          const el = document.createElement("div");
+          el.className = "dow";
+          el.textContent = label;
+          grid.appendChild(el);
+        });
+        const first = new Date(year, month - 1, 1);
+        const shift = (first.getDay() + 6) % 7;
+        for (let i = 0; i < shift; i++) {
+          const empty = document.createElement("div");
+          empty.className = "day empty";
+          grid.appendChild(empty);
+        }
+        const lastDate = new Date(year, month, 0).getDate();
+        for (let date = 1; date <= lastDate; date++) {
+          const iso = year + "-" + String(month).padStart(2, "0") + "-" + String(date).padStart(2, "0");
+          const day = byDate[iso];
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "day " + cssClass(day);
+          button.textContent = String(date);
+          button.addEventListener("click", () => {
+            dayJson.textContent = JSON.stringify(day, null, 2);
+            document.getElementById("form-date").value = iso;
+            document.getElementById("form-day").value = String(day.day);
+            document.getElementById("form-comment").value = day.comment || "";
+          });
+          grid.appendChild(button);
+        }
+        section.appendChild(grid);
+        calendarEl.appendChild(section);
+      }
+    }
+
+    function setStatus(message, isError) {
+      statusEl.textContent = message;
+      statusEl.className = "status" + (isError ? " error" : "");
+    }
+
+    async function mutate(method, url, body) {
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const text = await response.text();
+      const payload = text ? JSON.parse(text) : null;
+      if (!response.ok) {
+        throw new Error(payload && payload.error ? payload.error : "HTTP " + response.status);
+      }
+      return payload;
+    }
+
+    document.getElementById("create").addEventListener("click", async () => {
+      try {
+        await mutate("POST", "/api/v1/special-days", {
+          date: document.getElementById("form-date").value,
+          day: Number(document.getElementById("form-day").value),
+          comment: document.getElementById("form-comment").value || null,
+        });
+        setStatus("Добавлено");
+        await loadYear();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+    document.getElementById("update").addEventListener("click", async () => {
+      const date = document.getElementById("form-date").value;
+      try {
+        await mutate("PUT", "/api/v1/special-days/" + date, {
+          day: Number(document.getElementById("form-day").value),
+          comment: document.getElementById("form-comment").value || null,
+        });
+        setStatus("Изменено");
+        await loadYear();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+    document.getElementById("remove").addEventListener("click", async () => {
+      const date = document.getElementById("form-date").value;
+      try {
+        await mutate("DELETE", "/api/v1/special-days/" + date);
+        setStatus("Удалено");
+        await loadYear();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+    yearEl.addEventListener("change", loadYear);
+    loadYear();
+  </script>
+</body>
+</html>
